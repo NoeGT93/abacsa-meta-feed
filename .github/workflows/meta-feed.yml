@@ -1,0 +1,55 @@
+# Actualiza el feed de Meta 1 vez al día y lo publica en GitHub Pages de ESTE repositorio.
+# No toca el repositorio ni la infraestructura del catálogo: solo lee información pública.
+# Para activarlo: subir esta carpeta a un repositorio propio y en Settings → Pages elegir "GitHub Actions".
+name: Feed Meta ABACSA
+
+on:
+  schedule:
+    - cron: "0 11 * * *" # 05:00 en Guatemala (UTC-6)
+  workflow_dispatch: {} # botón "Run workflow" para actualizar a mano
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: meta-feed
+  cancel-in-progress: false
+
+jobs:
+  feed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Recupera el feed publicado (para conservarlo si esta ejecución falla) y el historial
+      - name: Feed anterior
+        run: |
+          mkdir -p dist
+          curl -fsS "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/feed.csv" -o dist/feed.csv || true
+          curl -fsS "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/feed-log.jsonl" -o dist/feed-log.jsonl || true
+      - name: Generar
+        id: gen
+        run: node generate-feed.mjs dist
+        continue-on-error: true
+      - name: Validar
+        if: steps.gen.outcome == 'success'
+        run: node validate-feed.mjs dist/feed.csv
+      # Si falló la generación se vuelve a publicar el feed anterior (con el registro del error)
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deploy
+        uses: actions/deploy-pages@v4
+      - name: Avisar si falló
+        if: steps.gen.outcome != 'success'
+        run: |
+          echo "::error::No se pudo generar el feed; se mantiene el anterior. Revisa feed-log.jsonl."
+          exit 1
