@@ -2,6 +2,7 @@
 // Compara cada fila contra el Excel convertido (products.json) y contra la web publicada.
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { get } from "./generate-feed.mjs";
 
 const feedFile = process.argv[2] || "dist/feed.csv";
 const productsFile = process.argv[3];
@@ -27,7 +28,7 @@ function parseCsv(text) {
 }
 
 const rows = parseCsv(fs.readFileSync(feedFile, "utf8"));
-const products = productsFile ? JSON.parse(fs.readFileSync(productsFile, "utf8")) : await (await fetch(DATA)).json();
+const products = productsFile ? JSON.parse(fs.readFileSync(productsFile, "utf8")) : await (await get(DATA)).json();
 const byCode = new Map(products.map((p) => [p.code, p]));
 const problems = [];
 const check = (ok, msg) => ok || problems.push(msg);
@@ -44,13 +45,14 @@ for (const r of rows) {
   check(r.link.endsWith("/producto/" + encodeURIComponent(r.id)), `${r.id}: enlace no corresponde al código`);
   check(r.description.length <= 9999 && r.title.length <= 200, `${r.id}: textos fuera de límite de Meta`);
 
-  const page = await fetch(r.link);
-  const html = await page.text();
-  check(page.ok && html.includes(`(${r.id}) — ABACSA`), `${r.id}: la ficha no responde o no es del producto`);
+  await new Promise((s) => setTimeout(s, 400));
+  const page = await get(r.link).catch(() => null);
+  const html = page ? await page.text() : "";
+  check(page && html.includes(`(${r.id}) — ABACSA`), `${r.id}: la ficha no responde o no es del producto`);
   check(html.includes(`content="${r.image_link}"`), `${r.id}: la foto no es la principal publicada en la ficha`);
-  const img = await fetch(r.image_link);
-  const buf = new Uint8Array(await img.arrayBuffer());
-  check(img.ok && img.headers.get("content-type")?.startsWith("image/"), `${r.id}: foto no accesible (${img.status})`);
+  const img = await get(r.image_link).catch(() => null);
+  const buf = img ? new Uint8Array(await img.arrayBuffer()) : new Uint8Array();
+  check(img && img.headers.get("content-type")?.startsWith("image/"), `${r.id}: foto no accesible`);
   // Tamaño mínimo recomendado por Meta: 500×500 (se lee de la cabecera JPEG)
   const size = jpegSize(buf);
   check(!size || (size.w >= 500 && size.h >= 500), `${r.id}: foto de ${size?.w}×${size?.h}, menor a 500×500`);

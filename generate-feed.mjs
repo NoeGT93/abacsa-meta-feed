@@ -18,10 +18,20 @@ const titleCase = (s) => s.toLowerCase().replace(/(^|\s)(\S)/g, (_, a, b) => a +
 const csv = (v) => (/[",\n]/.test(v) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
 const decode = (s) => s.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 
-async function get(url, init) {
-  const res = await fetch(url, { headers: { "User-Agent": "abacsa-meta-feed/1.0" }, ...init });
-  if (!res.ok) throw new Error(`${res.status} ${url}`);
-  return res;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Hasta 3 intentos con espera creciente: tolera fallas momentáneas del sitio sin insistir de más.
+export async function get(url, init, tries = 3) {
+  for (let i = 1; ; i++) {
+    try {
+      const res = await fetch(url, { headers: { "User-Agent": "abacsa-meta-feed/1.0" }, ...init });
+      if (res.ok) return res;
+      if (i >= tries || res.status < 500) throw new Error(`${res.status} ${url}`);
+    } catch (e) {
+      if (i >= tries) throw e;
+    }
+    await sleep(2000 * i);
+  }
 }
 
 // Una ficha → { name, image } validando que corresponde al producto y muestra el precio del Excel.
@@ -71,6 +81,7 @@ export async function generate() {
       errors.push({ code: p.code ?? null, error: "falta " + missing.join(", ") });
       continue;
     }
+    await sleep(400); // consultas espaciadas: carga mínima sobre el catálogo
     try {
       rows.push(buildRow(p, categories[p.code], await readProductPage(p)));
     } catch (e) {
@@ -84,7 +95,8 @@ export async function generate() {
 
 const toCsv = (rows) => [COLUMNS.join(","), ...rows.map((r) => COLUMNS.map((c) => csv(r[c])).join(","))].join("\n") + "\n";
 
-if (import.meta.url === `file://${process.argv[1].replace(/\\/g, "/").replace(/^([A-Z]:)/i, "/$1")}` || process.argv[1].endsWith("generate-feed.mjs")) {
+// Solo al ejecutarlo directamente (validate-feed.mjs importa get() sin generar nada)
+if (process.argv[1]?.endsWith("generate-feed.mjs")) {
   fs.mkdirSync(OUT, { recursive: true });
   const log = (entry) => fs.appendFileSync(path.join(OUT, "feed-log.jsonl"), JSON.stringify(entry) + "\n");
   try {
