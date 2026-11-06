@@ -12,7 +12,10 @@ const DATA = (process.env.DATA_URL || "https://raw.githubusercontent.com/NoeGT93
 const OUT = process.argv[2] || "dist";
 const MIN_VALID = Number(process.env.MIN_VALID || 30); // menos productos válidos = algo anda mal: no se publica
 const TYPES = { kits: "Kit", duos: "Dúo", perfumes: "Perfume", colonias: "Colonia" };
-const COLUMNS = ["id", "title", "description", "availability", "condition", "price", "link", "image_link", "brand", "product_type"];
+const COLUMNS = ["id", "title", "description", "availability", "condition", "price", "link", "image_link", "brand", "product_type", "custom_label_0", "custom_label_1", "custom_label_2"];
+// Precios por volumen del Excel en etiquetas personalizadas de Meta (vacías si el producto no los tiene)
+const TIERS = [["dozen", "Docena"], ["bundle", "Fardo"], ["distributor", "Distribuidor"]];
+const tierLabel = (p, i) => (p.prices[TIERS[i][0]] != null ? `${TIERS[i][1]}: Q${p.prices[TIERS[i][0]]}` : "");
 
 const titleCase = (s) => s.toLowerCase().replace(/(^|\s)(\S)/g, (_, a, b) => a + b.toUpperCase());
 const csv = (v) => (/[",\n]/.test(v) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
@@ -59,11 +62,14 @@ function buildRow(p, category, page) {
     description: `${type} ${page.name} de ${brand}. Código ${p.code}.${wholesale ? " Precio por mayor disponible en el catálogo." : ""}`,
     availability: "in stock", // autorizado por ABACSA: todos en existencia
     condition: "new", // autorizado por ABACSA: todos nuevos
-    price: `${p.prices.unit.toFixed(2)} GTQ`, // precio por unidad; los precios por volumen solo están en la web
+    price: `${p.prices.unit.toFixed(2)} GTQ`, // precio por unidad; docena/fardo/distribuidor van en custom_label_0..2
     link: page.link,
     image_link: page.image,
     brand,
     product_type: type,
+    custom_label_0: tierLabel(p, 0),
+    custom_label_1: tierLabel(p, 1),
+    custom_label_2: tierLabel(p, 2),
   };
 }
 

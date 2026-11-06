@@ -41,6 +41,10 @@ for (const r of rows) {
   if (!check(p, `${r.id}: código que no existe en el Excel`)) continue;
   for (const f of ["id", "title", "description", "availability", "condition", "price", "link", "image_link", "brand", "product_type"]) check(r[f], `${r.id}: falta ${f}`);
   check(r.price === `${p.prices.unit.toFixed(2)} GTQ`, `${r.id}: precio ${r.price} ≠ Excel Q${p.prices.unit}`);
+  ["dozen", "bundle", "distributor"].forEach((k, i) => {
+    const want = p.prices[k] != null ? `${["Docena", "Fardo", "Distribuidor"][i]}: Q${p.prices[k]}` : "";
+    check((r["custom_label_" + i] ?? "") === want, `${r.id}: custom_label_${i} "${r["custom_label_" + i]}" ≠ Excel "${want}"`);
+  });
   check(r.availability === "in stock" && r.condition === "new", `${r.id}: disponibilidad/estado`);
   check(r.link.endsWith("/producto/" + encodeURIComponent(r.id)), `${r.id}: enlace no corresponde al código`);
   check(r.description.length <= 9999 && r.title.length <= 200, `${r.id}: textos fuera de límite de Meta`);
